@@ -107,8 +107,10 @@ type CE<G> = <G as Group>::CE;
 mod tests {
   use super::*;
   use crate::provider::{bn256_grumpkin::bn256, secp_secq::secp256k1};
-  use bellpepper_core::{num::AllocatedNum, ConstraintSystem, SynthesisError};
-  use ff::PrimeField;
+  use bellpepper_core::{
+    boolean::AllocatedBit, num::AllocatedNum, ConstraintSystem, LinearCombination, SynthesisError
+  };
+  use ff::{PrimeField, PrimeFieldBits};
 
   #[derive(Clone, Debug, Default)]
   struct CubicCircuit {}
@@ -126,6 +128,7 @@ mod tests {
         Ok(x_cu.get_value().unwrap() + x.get_value().unwrap() + F::from(5u64))
       })?;
 
+
       cs.enforce(
         || "y = x^3 + x + 5",
         |lc| {
@@ -142,6 +145,111 @@ mod tests {
       );
 
       let _ = y.inputize(cs.namespace(|| "output"));
+
+      Ok(())
+    }
+  }
+
+  // Range check: check that the input (interpreted as an unsigned
+  // integer) fits into N bits, and output 1 if and only if input < B (idem)
+  #[derive(Clone, Debug)]
+  struct UnsignedRangeCircuit<const B: u64, const N: u8> {}
+
+  impl<const B: u64, const N: u8> UnsignedRangeCircuit<B, N> {
+    fn new() -> Self {
+      assert!(B < (1 << N));
+
+      Self {}
+    }
+  }
+
+  fn num_to_bits_le_bounded<
+    F: PrimeField + PrimeFieldBits,
+    CS: ConstraintSystem<F>,
+    const N: u8,
+  >(
+    cs: &mut CS,
+    n: AllocatedNum<F>,
+  ) -> Result<Vec<AllocatedBit>, SynthesisError> 
+  {
+
+    let opt_bits = match n.get_value() {
+      Some(v) => v.to_le_bits()
+        .into_iter()
+        .take(N as usize)
+        .map(|b| Some(b))
+        .collect::<Vec<Option<bool>>>(),
+      None => vec![None; N as usize]
+    };
+
+    // Add one witness per input bit in little-endian bit order
+    let bits_circuit = opt_bits.into_iter()
+      .enumerate()
+      // AllocateBit enforces the value to be 0 or 1 at the constraint level
+      .map(|(i, b)| AllocatedBit::alloc(cs.namespace(|| format!("b_{}", i)), b).unwrap())
+      .collect::<Vec<AllocatedBit>>();
+
+    let mut weighted_sum_lc = LinearCombination::zero();
+    let mut pow2 = F::ONE;
+
+    for bit in bits_circuit.iter() {
+      weighted_sum_lc = weighted_sum_lc + (pow2, bit.get_variable());
+      pow2 = pow2.double();
+    }
+
+    cs.enforce(
+      || "bit decomposition check",
+      |lc| lc + &weighted_sum_lc,
+      |lc| lc + CS::one(),
+      |lc| lc + n.get_variable(),
+    );
+
+      // Ok(bits_circuit.into_iter().map(Boolean::from).collect())
+
+    Ok(bits_circuit)
+  }
+
+  impl<F, const B: u64, const N: u8> Circuit<F> for UnsignedRangeCircuit<B, N>
+  where
+    F: PrimeField + PrimeFieldBits,
+  {
+    fn synthesize<CS: ConstraintSystem<F>>(self, cs: &mut CS) -> Result<(), SynthesisError> {
+      /**** Change here ****/
+      let input_value = 36;
+      /*********************/
+
+      /* // The comparison will take place over N + 1 bits
+      assert!(F::NUM_BITS > N as u32 + 1);
+
+      let input = AllocatedNum::alloc(cs.namespace(|| "input"), || Ok(F::from(input_value)))?;
+      let shifted_diff = AllocatedNum::alloc(cs.namespace(|| "shifted_diff"), || {
+        Ok(F::from(input_value + (1 << N) - B))
+      })?;
+      let shifted_diff_bits = shifted_diff.to_bits_le(cs.namespace(|| "shifted_diff_bits"))?;
+
+      // n2b.in <== in[0] + (1<<n) - in[1];
+
+      cs.enforce(
+        || "shifted_diff_computation",
+        |lc| lc + input.get_variable() + (F::from((1 << N) - B), CS::one()),
+        |lc| lc + CS::one(),
+        |lc| lc + shifted_diff.get_variable(),
+      ); */
+      
+      // TODO remove
+      //let input = AllocatedNum::alloc(cs.namespace(|| "input"), || Ok(F::from(input_value)))?;
+      let input = AllocatedNum::alloc(cs.namespace(|| "input"), || Ok(F::from(input_value)))?;
+      let input_bits = num_to_bits_le_bounded::<F, CS, N>(cs, input)?;
+
+      // Print each bit
+      for b in input_bits {
+        print!("{}", if let Some(v) = b.get_value() {if v {"1"} else {"0"}} else {"x"});
+      }
+
+      println!();
+      
+
+      // out <== 1-n2b.bits[n];
 
       Ok(())
     }
@@ -186,4 +294,26 @@ mod tests {
     let res = snark.verify(&vk, &[<G as Group>::Scalar::from(15u64)]);
     assert!(res.is_ok());
   }
+
+  #[test]
+  fn test_unsigned_range_snark_with() {
+    type G = pasta_curves::pallas::Point;
+    type EE = crate::provider::ipa_pc::EvaluationEngine<G>;
+    type S = crate::spartan::snark::RelaxedR1CSSNARK<G, EE>;
+
+    let circuit = UnsignedRangeCircuit::<10, 7>::new();
+
+    // produce keys
+    let (pk, vk) = SNARK::<G, S, UnsignedRangeCircuit<10, 7>>::setup(circuit.clone()).unwrap();
+
+    // produce a SNARK
+    let res = SNARK::prove(&pk, circuit);
+    assert!(res.is_ok());
+    let snark = res.unwrap();
+
+    // verify the SNARK
+    let res = snark.verify(&vk, &[]);
+    assert!(res.is_ok());
+  }
+  
 }
