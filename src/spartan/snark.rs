@@ -101,7 +101,32 @@ impl<G: Group, EE: EvaluationEngineTrait<G>> RelaxedR1CSSNARKTrait<G> for Relaxe
   ) -> Result<(Self::ProverKey, Self::VerifierKey), SpartanError> {
     let mut cs: ShapeCS<G> = ShapeCS::new();
     let _ = circuit.synthesize(&mut cs);
+
+    // Padding the ShapeCS: constraints (rows) and variables (columns)
+    let num_constraints = cs.num_constraints();
+
+    (num_constraints..num_constraints.next_power_of_two()).for_each(|i| {
+      cs.enforce(
+        || format!("padding_constraint_{i}"),
+        |lc| lc,
+        |lc| lc,
+        |lc| lc,
+      )
+    });
+
+    let solution_length = cs.num_aux() + cs.num_inputs() + 1;
+    (solution_length..solution_length.next_power_of_two() - 1).for_each(|i| {
+      cs.alloc(
+        || format!("padding_var_{i}"),
+        || Ok(G::Scalar::ZERO),
+      ).unwrap();
+    });
+
     let (S, ck) = cs.r1cs_shape();
+
+    // TODO remove
+    println!("**** Pretty print ****");
+    println!("{}", cs.pretty_print());
 
     let (pk_ee, vk_ee) = EE::setup(&ck);
 
@@ -121,9 +146,24 @@ impl<G: Group, EE: EvaluationEngineTrait<G>> RelaxedR1CSSNARKTrait<G> for Relaxe
     let mut cs: SatisfyingAssignment<G> = SatisfyingAssignment::new();
     let _ = circuit.synthesize(&mut cs);
 
-    let (u, w) = cs
-      .r1cs_instance_and_witness(&pk.S, &pk.ck)
-      .map_err(|_e| SpartanError::UnSat)?;
+    // Padding variables
+    let solution_length = cs.inputs_slice().len() + cs.aux_slice().len() + 1;
+    
+    (solution_length..solution_length.next_power_of_two()).for_each(|i| {
+      cs.alloc(
+        || format!("padding_var_{i}"),
+        || Ok(G::Scalar::ZERO),
+      ).unwrap();
+    });
+
+    // TODO remove
+    println!("pk.S: num_cons {}, num_vars: {}, num_io: {}", pk.S.num_cons, pk.S.num_vars, pk.S.num_io);
+    println!("cs: num_aux {}, num_inputs: {}", cs.inputs_slice().len(), cs.aux_slice().len());
+
+    let (u, w) = cs.r1cs_instance_and_witness(&pk.S, &pk.ck).map_err(|_e| {
+      println!("RETURNING UNSAT HERE, {}", _e);
+      SpartanError::UnSat
+    })?;
 
     // convert the instance and witness to relaxed form
     let (U, W) = (

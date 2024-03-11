@@ -26,6 +26,7 @@ pub mod traits;
 use bellpepper_core::Circuit;
 use core::marker::PhantomData;
 use errors::SpartanError;
+use ff::PrimeField;
 use serde::{Deserialize, Serialize};
 use traits::{
   commitment::{CommitmentEngineTrait, CommitmentTrait},
@@ -76,6 +77,7 @@ impl<G: Group, S: RelaxedR1CSSNARKTrait<G>, C: Circuit<G::Scalar>> SNARK<G, S, C
   /// Produces prover and verifier keys for the direct SNARK
   pub fn setup(circuit: C) -> Result<(ProverKey<G, S>, VerifierKey<G, S>), SpartanError> {
     let (pk, vk) = S::setup(circuit)?;
+
     Ok((ProverKey { pk }, VerifierKey { vk }))
   }
 
@@ -110,7 +112,7 @@ mod tests {
   use bellpepper_core::{
     boolean::AllocatedBit, num::AllocatedNum, ConstraintSystem, LinearCombination, SynthesisError,
   };
-  use ff::{PrimeField, PrimeFieldBits};
+  use ff::PrimeFieldBits;
 
   #[derive(Clone, Debug, Default)]
   struct CubicCircuit {}
@@ -211,7 +213,7 @@ mod tests {
   impl<F: PrimeField + PrimeFieldBits> Circuit<F> for UnsignedRangeCircuit {
     fn synthesize<CS: ConstraintSystem<F>>(self, cs: &mut CS) -> Result<(), SynthesisError> {
       /**** Change here ****/
-      let input_value = 36;
+      let input_value = 9;
       /*********************/
 
       assert!(F::NUM_BITS > self.num_bits as u32 + 1);
@@ -231,6 +233,23 @@ mod tests {
       //let shifted_diff_bits = num_to_bits_le_bounded::<F, CS, {UnsignedRangeCircuit::<B, N>::N_PLUS_1}>(cs, shifted_diff)?;
       let shifted_diff_bits = num_to_bits_le_bounded::<F, CS>(cs, shifted_diff, self.num_bits + 1)?;
 
+      for bit in &shifted_diff_bits {
+        print!(
+          "{}",
+          if let Some(b) = bit.get_value() {
+            if b {
+              "1"
+            } else {
+              "0"
+            }
+          } else {
+            "x"
+          }
+        );
+      }
+
+      println!("");
+
       // Check that the last (i.e. most sifnificant) bit is 0
       cs.enforce(
         || "bound_check",
@@ -239,7 +258,20 @@ mod tests {
         |lc| lc + (F::ZERO, CS::one()),
       );
 
-      // TODO remove
+      println!(
+        "KEY BIT: {}",
+        if let Some(b) = shifted_diff_bits[self.num_bits as usize].get_value() {
+          if b {
+            "1"
+          } else {
+            "0"
+          }
+        } else {
+          "x"
+        }
+      );
+
+      /*       // TODO remove
       (11..16).for_each(|i| {
         cs.enforce(|| format!("row_padding_{i}"), |lc| lc, |lc| lc, |lc| lc);
       });
@@ -248,7 +280,7 @@ mod tests {
       (10..16).for_each(|i| {
         let _ =
           AllocatedNum::alloc(cs.namespace(|| format!("col_padding_{i}")), || Ok(F::ZERO)).unwrap();
-      });
+      }); */
 
       // No need to inputize is needed, as V is not meant to learn the output
       // bit: they just know that, if all constraints are satisfied (and the
@@ -310,12 +342,9 @@ mod tests {
     let (pk, vk) = SNARK::<G, S, UnsignedRangeCircuit>::setup(circuit.clone()).unwrap();
 
     // produce a SNARK
-    let res = SNARK::prove(&pk, circuit);
-    assert!(res.is_ok());
-    let snark = res.unwrap();
+    let snark = SNARK::prove(&pk, circuit).unwrap();
 
     // verify the SNARK
-    let res = snark.verify(&vk, &[]);
-    assert!(res.is_ok());
+    let _ = snark.verify(&vk, &[]).unwrap();
   }
 }
