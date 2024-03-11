@@ -108,7 +108,7 @@ mod tests {
   use super::*;
   use crate::provider::{bn256_grumpkin::bn256, secp_secq::secp256k1};
   use bellpepper_core::{
-    boolean::AllocatedBit, num::AllocatedNum, ConstraintSystem, LinearCombination, SynthesisError
+    boolean::AllocatedBit, num::AllocatedNum, ConstraintSystem, LinearCombination, SynthesisError,
   };
   use ff::{PrimeField, PrimeFieldBits};
 
@@ -127,7 +127,6 @@ mod tests {
       let y = AllocatedNum::alloc(cs.namespace(|| "y"), || {
         Ok(x_cu.get_value().unwrap() + x.get_value().unwrap() + F::from(5u64))
       })?;
-
 
       cs.enforce(
         || "y = x^3 + x + 5",
@@ -150,36 +149,37 @@ mod tests {
     }
   }
 
-  // Range check: check that the input (interpreted as an unsigned
-  // integer) fits into N bits, and output 1 if and only if input < B (idem)
+  // Range check: constrains input < `bound`. The bound must fit into
+  // `num_bits` bits (this is asserted in the circuit constructor).
+  // Important: it must be checked elsewhere that the input fits into
+  // `num_bits` bits - this is NOT constrained by this circuit in order to
+  // avoid duplications
   #[derive(Clone, Debug)]
-  struct UnsignedRangeCircuit<const B: u64, const N: u8> {}
+  struct UnsignedRangeCircuit {
+    bound: u64,
+    num_bits: u8,
+  }
 
-  impl<const B: u64, const N: u8> UnsignedRangeCircuit<B, N> {
-    fn new() -> Self {
-      assert!(B < (1 << N));
-
-      Self {}
+  impl UnsignedRangeCircuit {
+    fn new(bound: u64, num_bits: u8) -> Self {
+      assert!(bound < (1 << num_bits));
+      Self { bound, num_bits }
     }
   }
 
-  fn num_to_bits_le_bounded<
-    F: PrimeField + PrimeFieldBits,
-    CS: ConstraintSystem<F>,
-    const N: u8,
-  >(
+  fn num_to_bits_le_bounded<F: PrimeField + PrimeFieldBits, CS: ConstraintSystem<F>>(
     cs: &mut CS,
     n: AllocatedNum<F>,
-  ) -> Result<Vec<AllocatedBit>, SynthesisError> 
-  {
-
+    num_bits: u8,
+  ) -> Result<Vec<AllocatedBit>, SynthesisError> {
     let opt_bits = match n.get_value() {
-      Some(v) => v.to_le_bits()
+      Some(v) => v
+        .to_le_bits()
         .into_iter()
-        .take(N as usize)
+        .take(num_bits as usize)
         .map(|b| Some(b))
         .collect::<Vec<Option<bool>>>(),
-      None => vec![None; N as usize]
+      None => vec![None; num_bits as usize],
     };
 
     // Add one witness per input bit in little-endian bit order
@@ -204,53 +204,56 @@ mod tests {
       |lc| lc + n.get_variable(),
     );
 
-      // Ok(bits_circuit.into_iter().map(Boolean::from).collect())
-
+    // Ok(bits_circuit.into_iter().map(Boolean::from).collect())
     Ok(bits_circuit)
   }
 
-  impl<F, const B: u64, const N: u8> Circuit<F> for UnsignedRangeCircuit<B, N>
-  where
-    F: PrimeField + PrimeFieldBits,
-  {
+  impl<F: PrimeField + PrimeFieldBits> Circuit<F> for UnsignedRangeCircuit {
     fn synthesize<CS: ConstraintSystem<F>>(self, cs: &mut CS) -> Result<(), SynthesisError> {
       /**** Change here ****/
       let input_value = 36;
       /*********************/
 
-      /* // The comparison will take place over N + 1 bits
-      assert!(F::NUM_BITS > N as u32 + 1);
+      assert!(F::NUM_BITS > self.num_bits as u32 + 1);
 
       let input = AllocatedNum::alloc(cs.namespace(|| "input"), || Ok(F::from(input_value)))?;
       let shifted_diff = AllocatedNum::alloc(cs.namespace(|| "shifted_diff"), || {
-        Ok(F::from(input_value + (1 << N) - B))
+        Ok(F::from(input_value + (1 << self.num_bits) - self.bound))
       })?;
-      let shifted_diff_bits = shifted_diff.to_bits_le(cs.namespace(|| "shifted_diff_bits"))?;
-
-      // n2b.in <== in[0] + (1<<n) - in[1];
 
       cs.enforce(
         || "shifted_diff_computation",
-        |lc| lc + input.get_variable() + (F::from((1 << N) - B), CS::one()),
+        |lc| lc + input.get_variable() + (F::from((1 << self.num_bits) - self.bound), CS::one()),
         |lc| lc + CS::one(),
         |lc| lc + shifted_diff.get_variable(),
-      ); */
-      
+      );
+
+      //let shifted_diff_bits = num_to_bits_le_bounded::<F, CS, {UnsignedRangeCircuit::<B, N>::N_PLUS_1}>(cs, shifted_diff)?;
+      let shifted_diff_bits = num_to_bits_le_bounded::<F, CS>(cs, shifted_diff, self.num_bits + 1)?;
+
+      // Check that the last (i.e. most sifnificant) bit is 0
+      cs.enforce(
+        || "bound_check",
+        |lc| lc + shifted_diff_bits[self.num_bits as usize].get_variable(),
+        |lc| lc + CS::one(),
+        |lc| lc + (F::ZERO, CS::one()),
+      );
+
       // TODO remove
-      //let input = AllocatedNum::alloc(cs.namespace(|| "input"), || Ok(F::from(input_value)))?;
-      let input = AllocatedNum::alloc(cs.namespace(|| "input"), || Ok(F::from(input_value)))?;
-      let input_bits = num_to_bits_le_bounded::<F, CS, N>(cs, input)?;
+      (11..16).for_each(|i| {
+        cs.enforce(|| format!("row_padding_{i}"), |lc| lc, |lc| lc, |lc| lc);
+      });
 
-      // Print each bit
-      for b in input_bits {
-        print!("{}", if let Some(v) = b.get_value() {if v {"1"} else {"0"}} else {"x"});
-      }
+      // TODO remove
+      (10..16).for_each(|i| {
+        let _ =
+          AllocatedNum::alloc(cs.namespace(|| format!("col_padding_{i}")), || Ok(F::ZERO)).unwrap();
+      });
 
-      println!();
-      
-
-      // out <== 1-n2b.bits[n];
-
+      // No need to inputize is needed, as V is not meant to learn the output
+      // bit: they just know that, if all constraints are satisfied (and the
+      // secret input fits into `num_bits` bits), the input is less than
+      // `bound`
       Ok(())
     }
   }
@@ -301,10 +304,10 @@ mod tests {
     type EE = crate::provider::ipa_pc::EvaluationEngine<G>;
     type S = crate::spartan::snark::RelaxedR1CSSNARK<G, EE>;
 
-    let circuit = UnsignedRangeCircuit::<10, 7>::new();
+    let circuit = UnsignedRangeCircuit::new(16, 7);
 
     // produce keys
-    let (pk, vk) = SNARK::<G, S, UnsignedRangeCircuit<10, 7>>::setup(circuit.clone()).unwrap();
+    let (pk, vk) = SNARK::<G, S, UnsignedRangeCircuit>::setup(circuit.clone()).unwrap();
 
     // produce a SNARK
     let res = SNARK::prove(&pk, circuit);
@@ -315,5 +318,4 @@ mod tests {
     let res = snark.verify(&vk, &[]);
     assert!(res.is_ok());
   }
-  
 }
