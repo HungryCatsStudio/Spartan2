@@ -219,6 +219,7 @@ mod tests {
       assert!(F::NUM_BITS > self.num_bits as u32 + 1);
 
       let input = AllocatedNum::alloc(cs.namespace(|| "input"), || Ok(F::from(input_value)))?;
+      
       let shifted_diff = AllocatedNum::alloc(cs.namespace(|| "shifted_diff"), || {
         Ok(F::from(input_value + (1 << self.num_bits) - self.bound))
       })?;
@@ -270,6 +271,16 @@ mod tests {
           "x"
         }
       );
+
+      if cs.is_witness_generator() {
+        for (i, v) in cs.aux_slice().iter().enumerate() {
+          println!("AUX[{}]: {:?}", i + 1, v);
+        }
+
+        for (i, v) in cs.inputs_slice().iter().enumerate() {
+          println!("INPUT[{}]: {:?}", i + 1, v);
+        }
+      }
 
       /*       // TODO remove
       (11..16).for_each(|i| {

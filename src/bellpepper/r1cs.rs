@@ -37,12 +37,27 @@ where
     shape: &R1CSShape<G>,
     ck: &CommitmentKey<G>,
   ) -> Result<(R1CSInstance<G>, R1CSWitness<G>), SpartanError> {
+    // TODO remove
+    println!("Getting here 1");
+    println!("shape.num_vars: {:?}", shape.num_vars);
+    println!("Aux_assignment: {:?}", self.aux_assignment.len());
+
     let W = R1CSWitness::<G>::new(shape, &self.aux_assignment)?;
+    
+    // TODO remove
+    println!("Getting here 2");
+    
     let X = &self.input_assignment[1..];
 
     let comm_W = W.commit(ck);
 
+    // TODO remove
+    println!("Getting here 3");
+
     let instance = R1CSInstance::<G>::new(shape, &comm_W, X)?;
+
+    // TODO remove
+    println!("Getting here 4");
 
     Ok((instance, W))
   }
