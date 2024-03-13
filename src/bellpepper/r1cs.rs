@@ -82,7 +82,7 @@ macro_rules! impl_spartan_shape {
           // Don't count One as an input for shape's purposes.
           let res = R1CSShape::new(num_constraints, num_vars, num_inputs - 1, &A, &B, &C);
           res.unwrap()
-        };
+        }.pad();
 
         let ck = R1CS::<G>::commitment_key(&S);
 
