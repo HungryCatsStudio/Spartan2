@@ -232,23 +232,6 @@ mod tests {
 
       let shifted_diff_bits = num_to_bits_le_bounded::<F, CS>(cs, shifted_diff, self.num_bits + 1)?;
 
-      for bit in &shifted_diff_bits {
-        print!(
-          "{}",
-          if let Some(b) = bit.get_value() {
-            if b {
-              "1"
-            } else {
-              "0"
-            }
-          } else {
-            "x"
-          }
-        );
-      }
-
-      println!("");
-
       // Check that the last (i.e. most sifnificant) bit is 0
       cs.enforce(
         || "bound_check",
