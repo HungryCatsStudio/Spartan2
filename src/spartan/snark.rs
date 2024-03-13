@@ -117,10 +117,8 @@ impl<G: Group, EE: EvaluationEngineTrait<G>> RelaxedR1CSSNARKTrait<G> for Relaxe
     let num_vars = cs.num_aux();
 
     (num_vars..num_vars.next_power_of_two()).for_each(|i| {
-      cs.alloc(
-        || format!("padding_var_{i}"),
-        || Ok(G::Scalar::ZERO),
-      ).unwrap();
+      cs.alloc(|| format!("padding_var_{i}"), || Ok(G::Scalar::ZERO))
+        .unwrap();
     });
 
     let (S, ck) = cs.r1cs_shape();
@@ -145,17 +143,15 @@ impl<G: Group, EE: EvaluationEngineTrait<G>> RelaxedR1CSSNARKTrait<G> for Relaxe
 
     // Padding variables
     let num_vars = cs.aux_slice().len();
-    
+
     (num_vars..num_vars.next_power_of_two()).for_each(|i| {
-      cs.alloc(
-        || format!("padding_var_{i}"),
-        || Ok(G::Scalar::ZERO),
-      ).unwrap();
+      cs.alloc(|| format!("padding_var_{i}"), || Ok(G::Scalar::ZERO))
+        .unwrap();
     });
 
-    let (u, w) = cs.r1cs_instance_and_witness(&pk.S, &pk.ck).map_err(|_e| {
-      SpartanError::UnSat
-    })?;
+    let (u, w) = cs
+      .r1cs_instance_and_witness(&pk.S, &pk.ck)
+      .map_err(|_e| SpartanError::UnSat)?;
 
     // convert the instance and witness to relaxed form
     let (U, W) = (

@@ -108,10 +108,7 @@ type CE<G> = <G as Group>::CE;
 mod tests {
   use super::*;
   use crate::provider::{bn256_grumpkin::bn256, secp_secq::secp256k1};
-  use bellpepper_core::{
-    boolean::AllocatedBit, num::AllocatedNum, ConstraintSystem, LinearCombination, SynthesisError,
-  };
-  use ff::PrimeFieldBits;
+  use bellpepper_core::{num::AllocatedNum, ConstraintSystem, SynthesisError};
   use ff::PrimeField;
 
   #[derive(Clone, Debug, Default)]
@@ -146,99 +143,6 @@ mod tests {
       );
 
       let _ = y.inputize(cs.namespace(|| "output"));
-
-      Ok(())
-    }
-  }
-
-  // Range check: constrains input < `bound`. The bound must fit into
-  // `num_bits` bits (this is asserted in the circuit constructor).
-  // Important: it must be checked elsewhere that the input fits into
-  // `num_bits` bits - this is NOT constrained by this circuit in order to
-  // avoid duplications
-  #[derive(Clone, Debug)]
-  struct UnsignedRangeCircuit {
-    bound: u64,
-    num_bits: u8,
-  }
-
-  impl UnsignedRangeCircuit {
-    fn new(bound: u64, num_bits: u8) -> Self {
-      assert!(bound < (1 << num_bits));
-      Self { bound, num_bits }
-    }
-  }
-
-  fn num_to_bits_le_bounded<F: PrimeField + PrimeFieldBits, CS: ConstraintSystem<F>>(
-    cs: &mut CS,
-    n: AllocatedNum<F>,
-    num_bits: u8,
-  ) -> Result<Vec<AllocatedBit>, SynthesisError> {
-    let opt_bits = match n.get_value() {
-      Some(v) => v
-        .to_le_bits()
-        .into_iter()
-        .take(num_bits as usize)
-        .map(|b| Some(b))
-        .collect::<Vec<Option<bool>>>(),
-      None => vec![None; num_bits as usize],
-    };
-
-    // Add one witness per input bit in little-endian bit order
-    let bits_circuit = opt_bits.into_iter()
-      .enumerate()
-      // AllocateBit enforces the value to be 0 or 1 at the constraint level
-      .map(|(i, b)| AllocatedBit::alloc(cs.namespace(|| format!("b_{}", i)), b).unwrap())
-      .collect::<Vec<AllocatedBit>>();
-
-    let mut weighted_sum_lc = LinearCombination::zero();
-    let mut pow2 = F::ONE;
-
-    for bit in bits_circuit.iter() {
-      weighted_sum_lc = weighted_sum_lc + (pow2, bit.get_variable());
-      pow2 = pow2.double();
-    }
-
-    cs.enforce(
-      || "bit decomposition check",
-      |lc| lc + &weighted_sum_lc,
-      |lc| lc + CS::one(),
-      |lc| lc + n.get_variable(),
-    );
-
-    Ok(bits_circuit)
-  }
-
-  impl<F: PrimeField + PrimeFieldBits> Circuit<F> for UnsignedRangeCircuit {
-    fn synthesize<CS: ConstraintSystem<F>>(self, cs: &mut CS) -> Result<(), SynthesisError> {
-      /**** Change here ****/
-      let input_value = 9;
-      /*********************/
-
-      assert!(F::NUM_BITS > self.num_bits as u32 + 1);
-
-      let input = AllocatedNum::alloc(cs.namespace(|| "input"), || Ok(F::from(input_value)))?;
-
-      let shifted_diff = AllocatedNum::alloc(cs.namespace(|| "shifted_diff"), || {
-        Ok(F::from(input_value + (1 << self.num_bits) - self.bound))
-      })?;
-
-      cs.enforce(
-        || "shifted_diff_computation",
-        |lc| lc + input.get_variable() + (F::from((1 << self.num_bits) - self.bound), CS::one()),
-        |lc| lc + CS::one(),
-        |lc| lc + shifted_diff.get_variable(),
-      );
-
-      let shifted_diff_bits = num_to_bits_le_bounded::<F, CS>(cs, shifted_diff, self.num_bits + 1)?;
-
-      // Check that the last (i.e. most sifnificant) bit is 0
-      cs.enforce(
-        || "bound_check",
-        |lc| lc + shifted_diff_bits[self.num_bits as usize].get_variable(),
-        |lc| lc + CS::one(),
-        |lc| lc + (F::ZERO, CS::one()),
-      );
 
       Ok(())
     }
@@ -282,23 +186,5 @@ mod tests {
     // verify the SNARK
     let res = snark.verify(&vk, &[<G as Group>::Scalar::from(15u64)]);
     assert!(res.is_ok());
-  }
-
-  #[test]
-  fn test_unsigned_range_snark_with() {
-    type G = pasta_curves::pallas::Point;
-    type EE = crate::provider::ipa_pc::EvaluationEngine<G>;
-    type S = crate::spartan::snark::RelaxedR1CSSNARK<G, EE>;
-
-    let circuit = UnsignedRangeCircuit::new(16, 7);
-
-    // produce keys
-    let (pk, vk) = SNARK::<G, S, UnsignedRangeCircuit>::setup(circuit.clone()).unwrap();
-
-    // produce a SNARK
-    let snark = SNARK::prove(&pk, circuit).unwrap();
-
-    // verify the SNARK
-    let _ = snark.verify(&vk, &[]).unwrap();
   }
 }
