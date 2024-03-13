@@ -206,7 +206,6 @@ mod tests {
       |lc| lc + n.get_variable(),
     );
 
-    // Ok(bits_circuit.into_iter().map(Boolean::from).collect())
     Ok(bits_circuit)
   }
 
@@ -219,7 +218,7 @@ mod tests {
       assert!(F::NUM_BITS > self.num_bits as u32 + 1);
 
       let input = AllocatedNum::alloc(cs.namespace(|| "input"), || Ok(F::from(input_value)))?;
-      
+
       let shifted_diff = AllocatedNum::alloc(cs.namespace(|| "shifted_diff"), || {
         Ok(F::from(input_value + (1 << self.num_bits) - self.bound))
       })?;
@@ -231,7 +230,6 @@ mod tests {
         |lc| lc + shifted_diff.get_variable(),
       );
 
-      //let shifted_diff_bits = num_to_bits_le_bounded::<F, CS, {UnsignedRangeCircuit::<B, N>::N_PLUS_1}>(cs, shifted_diff)?;
       let shifted_diff_bits = num_to_bits_le_bounded::<F, CS>(cs, shifted_diff, self.num_bits + 1)?;
 
       for bit in &shifted_diff_bits {
@@ -259,44 +257,6 @@ mod tests {
         |lc| lc + (F::ZERO, CS::one()),
       );
 
-      println!(
-        "KEY BIT: {}",
-        if let Some(b) = shifted_diff_bits[self.num_bits as usize].get_value() {
-          if b {
-            "1"
-          } else {
-            "0"
-          }
-        } else {
-          "x"
-        }
-      );
-
-      if cs.is_witness_generator() {
-        for (i, v) in cs.aux_slice().iter().enumerate() {
-          println!("AUX[{}]: {:?}", i + 1, v);
-        }
-
-        for (i, v) in cs.inputs_slice().iter().enumerate() {
-          println!("INPUT[{}]: {:?}", i + 1, v);
-        }
-      }
-
-      /*       // TODO remove
-      (11..16).for_each(|i| {
-        cs.enforce(|| format!("row_padding_{i}"), |lc| lc, |lc| lc, |lc| lc);
-      });
-
-      // TODO remove
-      (10..16).for_each(|i| {
-        let _ =
-          AllocatedNum::alloc(cs.namespace(|| format!("col_padding_{i}")), || Ok(F::ZERO)).unwrap();
-      }); */
-
-      // No need to inputize is needed, as V is not meant to learn the output
-      // bit: they just know that, if all constraints are satisfied (and the
-      // secret input fits into `num_bits` bits), the input is less than
-      // `bound`
       Ok(())
     }
   }

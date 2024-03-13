@@ -123,21 +123,7 @@ impl<G: Group, EE: EvaluationEngineTrait<G>> RelaxedR1CSSNARKTrait<G> for Relaxe
       ).unwrap();
     });
 
-    // TODO remove
-    println!("MY NUM VARS IN SETUP: {}", num_vars);
-    println!("MY NUM VARS IN SETUP AFTER PADDING: {}", cs.num_aux());
-
-    // TODO remove
-    //&println!("first cs: num_aux {}, num_inputs: {}", cs.inputs_slice().len(), cs.aux_slice().len());
-
     let (S, ck) = cs.r1cs_shape();
-
-    // TODO remove
-    println!("**** Pretty print ****");
-    println!("{}", cs.pretty_print());
-
-    // TODO remove
-    println!("FIRST pk.S: num_cons {}, num_vars: {}, num_io: {}", S.num_cons, S.num_vars, S.num_io);
 
     let (pk_ee, vk_ee) = EE::setup(&ck);
 
@@ -167,21 +153,7 @@ impl<G: Group, EE: EvaluationEngineTrait<G>> RelaxedR1CSSNARKTrait<G> for Relaxe
       ).unwrap();
     });
 
-    println!("MY NUM VARS IN SETUP: {}", num_vars);
-    println!("MY NUM VARS IN SETUP: {}", cs.aux_slice().len());
-
-    // TODO remove
-    println!("pk.S: num_cons {}, num_vars: {}, num_io: {}", pk.S.num_cons, pk.S.num_vars, pk.S.num_io);
-    println!("cs: num_inputs {}, num_aux: {}", cs.inputs_slice().len(), cs.aux_slice().len());
-    for (i, v) in cs.inputs_slice().iter().enumerate() {
-      println!("INPUT {}: {:?}", i, v);
-    }
-    for (i, v) in cs.aux_slice().iter().enumerate() {
-      println!("AUX {}: {:?}", i, v);
-    }
-
     let (u, w) = cs.r1cs_instance_and_witness(&pk.S, &pk.ck).map_err(|_e| {
-      println!("RETURNING UNSAT HERE, {}", _e);
       SpartanError::UnSat
     })?;
 
