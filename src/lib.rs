@@ -26,7 +26,6 @@ pub mod traits;
 use bellpepper_core::Circuit;
 use core::marker::PhantomData;
 use errors::SpartanError;
-use ff::PrimeField;
 use serde::{Deserialize, Serialize};
 use traits::{
   commitment::{CommitmentEngineTrait, CommitmentTrait},
@@ -113,6 +112,7 @@ mod tests {
     boolean::AllocatedBit, num::AllocatedNum, ConstraintSystem, LinearCombination, SynthesisError,
   };
   use ff::PrimeFieldBits;
+  use ff::PrimeField;
 
   #[derive(Clone, Debug, Default)]
   struct CubicCircuit {}
