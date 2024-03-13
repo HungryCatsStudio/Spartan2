@@ -102,6 +102,27 @@ impl<G: Group, EE: EvaluationEngineTrait<G>> RelaxedR1CSSNARKTrait<G> for Relaxe
     let mut cs: ShapeCS<G> = ShapeCS::new();
     let _ = circuit.synthesize(&mut cs);
 
+    // Padding the ShapeCS: constraints (rows) and variables (columns)
+    let num_constraints = cs.num_constraints();
+
+    (num_constraints..num_constraints.next_power_of_two()).for_each(|i| {
+      cs.enforce(
+        || format!("padding_constraint_{i}"),
+        |lc| lc,
+        |lc| lc,
+        |lc| lc,
+      )
+    });
+
+    let num_vars = cs.num_aux();
+
+    (num_vars..num_vars.next_power_of_two()).for_each(|i| {
+      cs.alloc(
+        || format!("padding_var_{i}"),
+        || Ok(G::Scalar::ZERO),
+      ).unwrap();
+    });
+
     let (S, ck) = cs.r1cs_shape();
 
     let (pk_ee, vk_ee) = EE::setup(&ck);
